@@ -1,0 +1,190 @@
+module axi4s_lite(
+  input axi_clk, axi_reset, 
+  input saxi_awvalid, output reg saxi_awready, input [31:0] saxi_awaddr, 
+  input saxi_wvalid, output reg saxi_wready, input [31:0] saxi_wdata, 
+  output reg saxi_bvalid, input saxi_bready, output reg [1:0] saxi_bresp, 
+  input saxi_arvalid, input [31:0] saxi_araddr, output reg saxi_arready, 
+  output reg [31:0] saxi_rdata, output reg [1:0] saxi_rresp, output reg saxi_rvalid, input saxi_rready
+);
+  localparam idle           = 0,
+             send_waddr_ack = 1,
+             send_raddr_ack = 2,
+             send_wdata_ack = 3,
+             update_mem     = 4,
+             send_wr_resp   = 5,
+             send_werr      = 6,
+             gen_data       = 7,
+             send_rd_err    = 8;
+  reg [3:0]  state  = idle;
+  reg [3:0]  nstate = idle;
+  reg [1:0]  count  = 0;
+  
+  reg [31:0] wdata, rdata, waddr, raddr; 
+  reg [31:0] mem [128];
+  always @(posedge axi_clk) begin
+    if(axi_reset == 1'b1) begin
+      state <= idle;
+      count <= 0;
+      for(int i = 0; i < 128; i++) begin
+        mem[i] <= 1'b0;
+      end
+      saxi_awready <= 1'b0;
+      saxi_wready  <= 1'b0;
+      saxi_bvalid  <= 1'b0;
+      saxi_bresp   <= 1'b0;
+      saxi_arready <= 1'b0;
+      saxi_rdata   <= 1'b0;
+      saxi_rresp   <= 1'b0;
+      saxi_rvalid  <= 1'b0;
+      wdata        <= 1'b0;
+      rdata        <= 1'b0;
+      waddr        <= 1'b0;
+      raddr        <= 1'b0;
+    end
+    else begin
+      case(state)
+        // -------------------------------------------------------------
+        // State 0: IDLE
+        // -------------------------------------------------------------
+        idle: begin
+          saxi_awready <= 1'b0;
+          saxi_wready  <= 1'b0;
+          saxi_bvalid  <= 1'b0;
+          saxi_bresp   <= 1'b0;
+          saxi_arready <= 1'b0;
+          saxi_rdata   <= 1'b0;
+          saxi_rresp   <= 1'b0;
+          saxi_rvalid  <= 1'b0;
+          wdata        <= 1'b0;
+          rdata        <= 1'b0;
+          waddr        <= 1'b0;
+          raddr        <= 1'b0;
+          count        <= 1'b0;
+          if(saxi_awvalid == 1'b1) begin
+            state        <= send_waddr_ack;
+            saxi_awready <= 1'b1;
+            waddr        <= saxi_awaddr;
+          end
+          else if(saxi_arvalid == 1'b1) begin
+            state        <= send_raddr_ack;
+            saxi_arready <= 1'b1;
+            raddr        <= saxi_araddr;
+          end
+          else begin
+            state        <= idle;
+          end
+        end
+        send_waddr_ack:begin
+saxi_awready<=1'b0;
+if(saxi_wvalid==1'b1)begin
+saxi_wready<=1'b1;
+wdata<=saxi_wdata;
+state<=send_wdata_ack;
+end
+else begin
+state<=send_waddr_ack;
+end
+        end
+        send_wdata_ack:begin
+saxi_wready<=1'b0;
+if(waddr<128)begin
+mem[waddr]<=wdata;
+state<=update_mem;
+end
+else begin
+state<= send_werr;
+saxi_bvalid<=1'b1;
+saxi_bresp<=2'b11;
+
+end
+        end
+        update_mem:begin
+mem[waddr]<=wdata;
+state<=send_wr_resp;
+        end
+        send_wr_resp:begin
+saxi_bvalid<=1'b1;
+saxi_bresp<=2'b00;
+if(saxi_bready)begin
+state<=idle;
+end
+else begin
+state<=send_wr_resp;
+end
+        end
+        send_werr:begin
+if(saxi_bready)begin
+state<=idle;
+end
+else begin
+state<=send_werr;
+end
+        end
+         send_raddr_ack :begin
+saxi_arready<=1'b0;
+if(raddr<128)begin
+state<=gen_data;
+end
+else begin
+state<= send_rd_err;
+saxi_rvalid<=1'b1;
+saxi_rdata<=0;
+saxi_rresp<=2'b11;
+end
+
+         end
+         gen_data:begin
+if(count<2)begin
+count=count+1;
+rdata<=mem[raddr];
+state<=gen_data;
+
+end
+else begin
+saxi_rvalid<=1'b1;
+saxi_rdata<=rdata;
+saxi_rresp<=2'b00;
+if(saxi_rready)begin
+state<=idle;
+end
+else begin
+state<=gen_data;
+end
+end
+
+
+         end
+           send_rd_err:
+        begin
+        if(saxi_rready)
+                begin
+                state <= idle;
+                end
+        else
+                begin
+                state <= send_rd_err;
+                end
+        end
+        
+ 
+       default: state <= idle;        
+      endcase
+    end
+    end
+        
+        endmodule
+        interface axi_if;
+  logic        clk;
+  logic        reset;
+  logic        awvalid, awready;
+  logic [31:0] awaddr;
+  logic        wvalid, wready;
+  logic [31:0] wdata;
+  logic        bvalid, bready;
+  logic [1:0]  bresp;
+  logic        arvalid, arready;
+  logic [31:0] araddr;
+  logic        rvalid, rready;
+  logic [31:0] rdata;
+  logic [1:0]  rresp;
+endinterface
